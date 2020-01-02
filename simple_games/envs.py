@@ -12,7 +12,7 @@ class SimpleGameEnv():
         self.state = np.zeros((num_vertices,num_vertices))
         self.legal_moves = [0]
         self.obs = 0
-        obs = self.obs
+        obs = self.get_obs()
 
         return obs
 
@@ -33,7 +33,7 @@ class SimEnv(SimpleGameEnv):
 
         self.num_vertices = num_vertices
         self.action_dim = 15 #self.num_vertices * (self.num_vertices-1)
-        self.obs_dim = [self.action_dim, 2]
+        self.obs_dim = [self.action_dim*2]
         self.action_space = spaces.Discrete(self.action_dim)
         self.observation_space = spaces.Box(0, 1, shape=self.obs_dim, dtype=np.int16)
         self.act_dict = []
@@ -44,15 +44,23 @@ class SimEnv(SimpleGameEnv):
     def reset(self):
         self.state = np.zeros((2,self.num_vertices,self.num_vertices))
         self.legal_moves = [ii for ii in range(self.action_dim)]
-        self.obs = np.zeros((self.action_dim, 2))
-        obs = self.obs
+        obs = self.get_obs()
 
         return obs
+
+    def get_obs(self):
+        obs = []
+        [[[obs.append(self.state[player,ii,jj]) \
+                for jj in range(ii+1,self.num_vertices)] \
+                for ii in range(self.num_vertices)] \
+                for player in [0,1]]
+
+        return np.array(obs)
 
     def step(self, action, player=0):
 
         try:
-            _ = self.obs
+            _ = self.legal_moves
         except:
             print("call env.reset before env.step")
             self.reset()
@@ -64,23 +72,23 @@ class SimEnv(SimpleGameEnv):
         if action in self.legal_moves:
             self.state[player,edge[0], edge[1]] = 1.0
             self.legal_moves.remove(action)
-            self.obs[action,player] = 1.0 
         else:
             # illegel move, edge already taken
             illegal = True
             done = True
-            print("illegal move attempted by player ", player)
 
         triangles = self.check_game_over(player)
 
+        done = False
         if triangles:
-            reward = -1.0
+            reward = 0.0
+            done = True
         else:
             reward = 1.0 if len(self.legal_moves)==1 else 0.0
+            
 
-        done = True if reward == 1.0 or reward == -1.0 else False
-
-        obs = self.obs
+        done = True if reward == 1.0 else done
+        obs = self.get_obs()
         info = {}
 
         return obs, reward, done, info
@@ -88,7 +96,7 @@ class SimEnv(SimpleGameEnv):
 
     def check_game_over(self, player=0):
         
-        triangles = False
+        has_triangles = False
         
         # iterate over each vertex
         for ii in range(self.num_vertices):
@@ -101,12 +109,15 @@ class SimEnv(SimpleGameEnv):
             # if any two vertices that are connected to vertex ii\
             # are connected to each other, \
             # that's a triangle (game over)
-            triangles = [self.state[player, elem, elem2] \
-                    for elem, elem2 in zip(connections, reversed(connections))]
+
+            #triangles = [self.state[player, elem, elem2] \
+            #        for elem, elem2 in zip(connections, reversed(connections))]
+            triangles = []
+            [[triangles.append(self.state[player,ii,jj] if ii!=jj else 0.0) \
+                    for jj in connections] \
+                    for ii in connections]
             if np.sum(triangles) > 0:
                 has_triangles = True
-            else:
-                has_triangles = False
 
         return has_triangles
 
@@ -114,7 +125,7 @@ class TicTacToeEnv(SimpleGameEnv):
     def __init__(self, num_vertices=3):
         self.num_vertices = num_vertices
         self.action_dim = 9 
-        self.obs_dim = [self.action_dim, 2]
+        self.obs_dim = [self.action_dim * 2]
         self.action_space = spaces.Discrete(self.action_dim)
         self.observation_space = spaces.Box(0, 1, shape=self.obs_dim, dtype=np.int16)
         self.act_dict = [[int(square/3),square % 3] for square in range(9)]
@@ -143,7 +154,6 @@ class TicTacToeEnv(SimpleGameEnv):
             or self.state[1,square[0],square[1]]:
             illegal = True
             done = True
-            print("illegal move attempted by player ", player)
         else:
             illegal = False
             self.state[player, square[0], square[1]] = 1.0
@@ -202,7 +212,10 @@ class TicTacToeEnv(SimpleGameEnv):
 class HexapawnEnv(SimpleGameEnv):
 
     def __init__(self):
-        pass
+        self.action_dim = 9
+        self.obs_dim = [self.action_dim*2]
+        self.action_space = spaces.Discrete(self.action_dim)
+        self.observation_space = spaces.Box(0, 1, shape=self.obs_dim, dtype=np.int16)
 
     def reset(self):
         self.state = np.zeros((2,3,3))
@@ -225,7 +238,7 @@ class HexapawnEnv(SimpleGameEnv):
 
                 pawn_moves = []
                 if pawn in self.state[player,...]:
-                    offset =  pawn * 3 
+                    offset =  (pawn-1) * 3 
                     pawn_idx = np.argmax(\
                             np.where(self.state[player,...]==pawn,1,0))
                     coord_x, coord_y = int(pawn_idx/3), pawn_idx % 3
@@ -271,14 +284,13 @@ class HexapawnEnv(SimpleGameEnv):
         
         if action in self.legal_moves[player]:
             direction = -1 if player else 1
-            pawn = np.floor(action/3) 
-            move = action - pawn * 3
+            pawn = 1 + np.floor(action/3) 
+            move = action % 3
             pawn_idx = np.argmax(\
                     np.where(self.state[player,...]==pawn,1,0))
             coord_x, coord_y = int(pawn_idx/3), pawn_idx % 3
             self.state[player,coord_x, coord_y] = 0.0
 
-            print("pawn", pawn, "move ", move)
             if move == 0:
                 self.state[player,coord_x + direction,coord_y-1] = pawn
                 self.state[1-player,coord_x + direction,coord_y-1] = 0.0
@@ -290,16 +302,14 @@ class HexapawnEnv(SimpleGameEnv):
         else:
             illegal = True
             done = True
-            print("illegal move attempted by player ", player)
 
         self.update_legal_moves()
         win, done = self.check_game_over(player)
 
         reward = 1.0 if win else 0.0
-        if win: print("winner!")
         info = {}
 
-        obs = self.get_obs
+        obs = self.get_obs()
 
         return obs, reward, done, info
 
@@ -332,33 +342,46 @@ class HexapawnEnv(SimpleGameEnv):
 if __name__ == "__main__":
 
     env = SimEnv()
-    for make_env in [HexapawnEnv, TicTacToeEnv, SimEnv ]:
-        env = make_env()
-
-        for epds in range(3):
-            done = False
-            obs = env.reset()
-            while not done:
-                for player in [0,1]:
-                    env.disp_game()
-                    if type(env.legal_moves[0]) == list:
-                        legal_moves = env.legal_moves[player]
-                    else:
-                        legal_moves = env.legal_moves
-                    action = np.random.choice(legal_moves)
-                    obs, reward, done, info = env.step(action, player)
-                    if done and reward > 0:
-                        print("plyr {} loses, congrats plyr {}".format(\
-                                player, int(not(player))))
-                        break
-                    elif done and reward < 0:
-                        print("plyr {} loses, congrats plyr {}".format(\
-                                int(not(player)),player))
-                        break
-
-                    elif done:
-                        print("game is a draw")
-                        break
-                print(reward)
+    for ii in range(100):
+        done = False
+        env.reset()
+        steps = 0
+        while not done:
+            for player in [0,1]:
+                obs, reward, done, info = env.step(np.random.choice(env.legal_moves),player)
+                steps += 1
+                if done:
+                    print("player {}".format(player))
+                    print("game over after {} moves, reward {}"\
+                            .format(steps,reward))
+                    break
+#    for make_env in [HexapawnEnv, TicTacToeEnv, SimEnv ]:
+#        env = make_env()
+#
+#        for epds in range(3):
+#            done = False
+#            obs = env.reset()
+#            while not done:
+#                for player in [0,1]:
+#                    env.disp_game()
+#                    if type(env.legal_moves[0]) == list:
+#                        legal_moves = env.legal_moves[player]
+#                    else:
+#                        legal_moves = env.legal_moves
+#                    action = np.random.choice(legal_moves)
+#                    obs, reward, done, info = env.step(action, player)
+#                    if done and reward > 0:
+#                        print("plyr {} loses, congrats plyr {}".format(\
+#                                player, int(not(player))))
+#                        break
+#                    elif done and reward < 0:
+#                        print("plyr {} loses, congrats plyr {}".format(\
+#                                int(not(player)),player))
+#                        break
+#
+#                    elif done:
+#                        print("game is a draw")
+#                        break
+#                print(reward)
 
 

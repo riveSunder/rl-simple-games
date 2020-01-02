@@ -4,7 +4,7 @@ import sys
 
 setup(
     name="simple_games",
-    py_modules=["src"],
+    py_modules=["simple_games"],
     version='0.1',
     install_requires=["numpy", "gym"],
     description="A suite of extremely simple (kinderleicht) games",
